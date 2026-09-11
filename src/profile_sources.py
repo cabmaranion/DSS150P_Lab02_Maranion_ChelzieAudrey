@@ -46,8 +46,45 @@ def profile_csv(path):
 
 
 def profile_json(path):
-    # TODO: record count, keys, nested fields, date/time fields, numeric fields, nulls
-    pass
+    with open(path, encoding='utf-8') as f:
+        data = json.load(f)
+
+    size_kb = path.stat().st_size / 1024
+    print(f"\n=== {path.name} ===")
+    print(f"file size: {size_kb:.1f} KB")
+    print(f"root structure: {type(data).__name__}")
+    print(f"record count: {len(data)}")
+
+    all_keys = set()
+    for record in data:
+        all_keys.update(record.keys())
+    print(f"\ntop-level keys: {sorted(all_keys)}")
+
+    print("\nfield analysis:")
+    sample = data[0]
+    for key in sorted(all_keys):
+        value = sample.get(key)
+        if isinstance(value, dict):
+            kind = f"nested object (keys: {sorted(value.keys())})"
+        elif isinstance(value, list):
+            kind = "nested array"
+        elif isinstance(value, bool):
+            kind = "boolean"
+        elif isinstance(value, (int, float)):
+            kind = "numeric"
+        elif isinstance(value, str) and ("time" in key.lower() or "date" in key.lower()):
+            kind = "timestamp (as text)"
+        else:
+            kind = "string"
+        print(f"  {key:<18} {kind}")
+
+    print("\nmissing or null values per key:")
+    for key in sorted(all_keys):
+        missing = sum(1 for r in data if key not in r or r[key] is None)
+        print(f"  {key:<18} {missing}")
+
+    nested_keys = [k for k in all_keys if isinstance(sample.get(k), dict)]
+    print(f"\nnested fields: {nested_keys}")
 
 
 def profile_parquet(path):
