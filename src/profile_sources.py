@@ -88,8 +88,42 @@ def profile_json(path):
 
 
 def profile_parquet(path):
-    # TODO: use pandas.read_parquet; report rows/columns/dtypes/nulls and file size
-    pass
+    df = pd.read_parquet(path)
+    size_kb = path.stat().st_size / 1024
+
+    print(f"\n=== {path.name} ===")
+    print(f"file size: {size_kb:.1f} KB")
+    print(f"rows: {df.shape[0]}  columns: {df.shape[1]}")
+
+    print("\ndtypes as read from parquet:")
+    print(df.dtypes)
+
+    print("\nmissing values per column:")
+    print(df.isna().sum())
+
+    print("\nfirst three records:")
+    print(df.head(3))
+
+    # Format comparison: same 200 products stored three ways
+    csv_path = path.parent / 'products_optional_compare.csv'
+    json_path = path.parent / 'products_optional_compare.json'
+
+    if csv_path.exists() and json_path.exists():
+        df_csv = pd.read_csv(csv_path)
+        df_json = pd.read_json(json_path)
+
+        print("\n--- format comparison (same 200 products) ---")
+        print(f"parquet: {size_kb:6.1f} KB")
+        print(f"csv:     {csv_path.stat().st_size / 1024:6.1f} KB")
+        print(f"json:    {json_path.stat().st_size / 1024:6.1f} KB")
+
+        print("\ndtypes by format:")
+        comparison = pd.DataFrame({
+            'parquet': df.dtypes.astype(str),
+            'csv': df_csv.dtypes.astype(str),
+            'json': df_json.dtypes.astype(str),
+        })
+        print(comparison)
 
 
 if __name__ == '__main__':
