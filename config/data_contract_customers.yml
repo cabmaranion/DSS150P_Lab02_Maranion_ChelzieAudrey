@@ -1,18 +1,75 @@
 dataset: customers
-owner: "TODO"
+description: "Customer master records including contact details, city, signup date, and business segment. Sourced from customers.csv."
+
+owner: "TODO - producer not yet confirmed"
+consumer: "Analytics and reporting team; used for customer segmentation and dashboards."
+
 source_type: csv
-primary_key: customer_id
+primary_key: "customer_id (candidate key only - 247 distinct values across 250 rows, so uniqueness is not currently satisfied)"
+
 delivery:
-  cadence: "TODO"
+  cadence: "TODO - unknown; supplied as a one-time snapshot, real upstream cadence requires confirmation"
+  availability: "TODO - requires confirmation"
+
+ingestion_approach:
+  method: full
+  justification: >
+    Full ingestion. There is no updated_at or equivalent change-tracking column in
+    customers.csv, so there is no field to filter on to identify what is new or changed
+    since the last load. Incremental extraction requires a watermark and this source does
+    not have one. The file is also only 250 rows, so a full reload each run is cheap and
+    there is no performance case for incremental complexity. If the source grows
+    substantially or a change-tracking column is added, this decision should be revisited.
+
 fields:
   - name: customer_id
     type: string
     nullable: false
     unique: true
+    description: "Identifier assigned to a customer, formatted C####."
+  - name: first_name
+    type: string
+    nullable: false
+    unique: false
+    description: "Customer's given name."
+  - name: last_name
+    type: string
+    nullable: false
+    unique: false
+    description: "Customer's family name."
   - name: email
     type: string
     nullable: true
+    unique: false
+    description: "Customer's contact email address. Missing in 3 of 250 observed rows."
+  - name: city
+    type: string
+    nullable: true
+    unique: false
+    description: "City associated with the customer's address. Missing in 2 of 250 observed rows."
+  - name: signup_date
+    type: date
+    nullable: false
+    unique: false
+    description: "Date the customer registered. Arrives as text in the CSV and must be parsed."
+  - name: customer_segment
+    type: string
+    nullable: false
+    unique: false
+    allowed_values: [Professional, Retail, SME, Student]
+    description: "Business segment the customer is classified under."
+
 quality_rules:
-  - "TODO: define at least 5 rules"
+  - "customer_id must be unique; C0090 currently maps to two different people, so duplicate IDs must be quarantined and raised with the source owner"
+  - "customer_id, first_name, signup_date and customer_segment must not be null; a row missing any of these is rejected as incomplete"
+  - "customer_segment must be one of Professional, Retail, SME or Student; any other value is flagged for review"
+  - "email must contain an @ symbol when it is not null"
+  - "signup_date must parse as a valid date; rows that fail to parse are rejected"
+
 change_policy:
-  schema_change_notice: "TODO"
+  schema_change_notice: "The producer must give at least one sprint's notice before adding, renaming, or changing the type of any column."
+  breaking_changes: "No breaking schema changes without prior agreement with the consuming team."
+
+escalation:
+  contact: "TODO - escalation contact not yet confirmed"
+  process: "Until a source owner is assigned, quality rule failures should be raised with the data source owner once identified."
