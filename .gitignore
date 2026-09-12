@@ -1,7 +1,8 @@
-.venv/
+﻿.venv/
 __pycache__/
 *.pyc
 .env
 raw/
 state/
-outputs/
+outputs/*
+!outputs/pipeline_run_log.csv
