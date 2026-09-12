@@ -1,5 +1,4 @@
-"""Week 2 starter: profile CSV, JSON, Parquet, API payload, and PostgreSQL table.
-Complete the TODOs. Do not hard-code expected counts.
+"""Profiles CSV, JSON, and Parquet sources. All counts are computed at runtime.
 """
 from pathlib import Path
 import json, csv
