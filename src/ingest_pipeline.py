@@ -3,7 +3,7 @@ Students implement file ingestion + paginated REST API ingestion + watermark + d
 """
 from pathlib import Path
 from datetime import datetime, timezone
-import json, hashlib, shutil
+import json, hashlib, shutil, csv, uuid
 import requests
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -158,6 +158,69 @@ def ingest_api():
         'watermark_after': watermark_after,
     }
 
-if __name__=='__main__':
-    RAW.mkdir(exist_ok=True); STATE.mkdir(exist_ok=True)
-    ingest_files(); ingest_api()
+LOG_PATH = ROOT / 'outputs' / 'pipeline_run_log.csv'
+LOG_HEADER = ['run_id', 'started_at', 'finished_at', 'status', 'source',
+              'records_read', 'records_written', 'duplicates_removed',
+              'watermark_before', 'watermark_after', 'error_message']
+
+
+def append_run_log(row):
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    is_new = not LOG_PATH.exists()
+    with LOG_PATH.open('a', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=LOG_HEADER)
+        if is_new:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+def run_stage(run_id, source, fn):
+    """Run one ingestion stage and log the outcome, success or failure."""
+    started = utc_now()
+    row = {k: '' for k in LOG_HEADER}
+    row.update({'run_id': run_id, 'started_at': started, 'source': source})
+    try:
+        result = fn()
+        row.update({
+            'finished_at': utc_now(),
+            'status': 'success',
+            'records_read': result.get('read', ''),
+            'records_written': result.get('written', ''),
+            'duplicates_removed': result.get('duplicates_removed', 0),
+            'watermark_before': result.get('watermark_before', ''),
+            'watermark_after': result.get('watermark_after', ''),
+        })
+        append_run_log(row)
+        return result
+    except Exception as exc:
+        row.update({
+            'finished_at': utc_now(),
+            'status': 'failed',
+            'watermark_before': load_watermark() or '',
+            'watermark_after': load_watermark() or '',
+            'error_message': f"{type(exc).__name__}: {exc}",
+        })
+        append_run_log(row)
+        print(f"  FAILED [{source}]: {type(exc).__name__}: {exc}")
+        raise
+
+
+if __name__ == '__main__':
+    RAW.mkdir(exist_ok=True)
+    STATE.mkdir(exist_ok=True)
+
+    run_id = str(uuid.uuid4())[:8]
+    print(f"run_id: {run_id}")
+
+    failed = False
+    try:
+        run_stage(run_id, 'files', ingest_files)
+    except Exception:
+        failed = True
+    try:
+        run_stage(run_id, 'api', ingest_api)
+    except Exception:
+        failed = True
+
+    print(f"run {run_id} finished with status: {'failed' if failed else 'success'}")
+    print(f"run log: {LOG_PATH}")
