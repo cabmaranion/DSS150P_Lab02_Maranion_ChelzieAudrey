@@ -1,0 +1,174 @@
+sources:
+
+  - source_name: "customers.csv"
+    source_type: "csv_file"
+    location_or_endpoint: "data/customers.csv"
+    owner: "TODO - requires source owner confirmation"
+    description: "Customer master records including contact details, city, signup date, and business segment."
+    record_count: 250
+    schema:
+      - name: customer_id
+        type: string
+      - name: first_name
+        type: string
+      - name: last_name
+        type: string
+      - name: email
+        type: string
+      - name: city
+        type: string
+      - name: signup_date
+        type: date
+      - name: customer_segment
+        type: string
+    primary_or_candidate_key: "customer_id (candidate only - 247 distinct across 250 rows)"
+    update_pattern: "one-time snapshot; real upstream cadence unknown"
+    known_quality_issues:
+      - "3 missing email values"
+      - "2 missing city values"
+      - "2 exact duplicate rows"
+      - "customer_id C0090 maps to two different people"
+      - "signup_date arrives as text, not a date type"
+    acquisition_method: "direct file read from disk; full load"
+    validation_checks:
+      - "customer_id must be unique"
+      - "customer_id, first_name, signup_date, customer_segment must not be null"
+      - "customer_segment must be one of Professional, Retail, SME, Student"
+
+  - source_name: "orders.json"
+    source_type: "json_file"
+    location_or_endpoint: "data/orders.json"
+    owner: "TODO - requires source owner confirmation"
+    description: "Order records including order identifiers, timestamps, status, item and pricing details, and a nested shipping object capturing region and delivery method."
+    record_count: 250
+    schema:
+      - name: order_id
+        type: string
+      - name: customer_id
+        type: string
+      - name: order_timestamp
+        type: timestamp
+      - name: status
+        type: string
+      - name: item_count
+        type: int64
+      - name: subtotal
+        type: float64
+      - name: shipping_fee
+        type: int64
+      - name: total_amount
+        type: float64
+      - name: shipping
+        type: object
+        fields:
+          - name: region
+            type: string
+          - name: method
+            type: string
+    primary_or_candidate_key: "order_id"
+    update_pattern: "one-time snapshot; real upstream cadence unknown"
+    known_quality_issues:
+      - "zero nulls across all fields"
+      - "nested shipping object (region, method) does not fit a flat table as-is; requires flattening or JSONB decision"
+    acquisition_method: "direct file read from disk; full load"
+    validation_checks:
+      - "order_id must not be null"
+      - "shipping.region must be one of the 5 known region values"
+      - "shipping.method must be one of the 3 known method values"
+
+  - source_name: "products.parquet"
+    source_type: "parquet_file"
+    location_or_endpoint: "data/products.parquet"
+    owner: "TODO - requires source owner confirmation"
+    description: "Product catalog including identifiers, category, brand, pricing, and stock levels."
+    record_count: 200
+    schema:
+      - name: product_id
+        type: string
+      - name: product_name
+        type: string
+      - name: category
+        type: string
+      - name: brand
+        type: string
+      - name: unit_price
+        type: float64
+      - name: stock_quantity
+        type: int32
+      - name: weight_kg
+        type: float64
+    primary_or_candidate_key: "product_id"
+    update_pattern: "one-time snapshot; real upstream cadence unknown"
+    known_quality_issues:
+      - "none observed; schema types preserved on read (e.g. stock_quantity retained as int32, unlike CSV/JSON which widen to int64)"
+    acquisition_method: "direct file read from disk; full load"
+    validation_checks:
+      - "product_id must be unique and not null"
+      - "unit_price and stock_quantity must be non-negative"
+
+  - source_name: "events API"
+    source_type: "rest_api"
+    location_or_endpoint: "http://127.0.0.1:8000/api/events"
+    owner: "TODO - requires source owner confirmation"
+    description: "Paginated event stream including customer, event type, and amount, plus a nested metadata object capturing channel and campaign attribution."
+    record_count: 122
+    schema:
+      - name: event_id
+        type: string
+      - name: customer_id
+        type: string
+      - name: event_type
+        type: string
+      - name: amount
+        type: float64
+      - name: updated_at
+        type: timestamp
+      - name: metadata
+        type: object
+        fields:
+          - name: channel
+            type: string
+          - name: campaign
+            type: string
+    primary_or_candidate_key: "event_id"
+    update_pattern: "incremental; supports updated_after parameter and returns has_more flag, and records carry their own updated_at timestamp, indicating ongoing change rather than a static snapshot"
+    known_quality_issues:
+      - "nested metadata object (channel, campaign) does not fit a flat table as-is; requires flattening or JSONB decision, same pattern as orders.json shipping"
+    acquisition_method: "paginated API pull, iterating until has_more is false; use updated_after as a watermark on subsequent runs"
+    validation_checks:
+      - "event_id must be unique and not null"
+      - "pagination must continue until has_more is false to avoid partial ingestion"
+
+  - source_name: "support_tickets"
+    source_type: "postgres_table"
+    location_or_endpoint: "dss150p database, public.support_tickets"
+    owner: "TODO - requires source owner confirmation"
+    description: "Live support ticket records tracking category, priority, assignment, and resolution status."
+    record_count: 250
+    schema:
+      - name: ticket_id
+        type: integer
+      - name: customer_id
+        type: string
+      - name: category
+        type: string
+      - name: priority
+        type: string
+      - name: assigned_agent
+        type: string
+      - name: opened_at
+        type: timestamp
+      - name: resolved_at
+        type: timestamp
+      - name: status
+        type: string
+    primary_or_candidate_key: "ticket_id (integer, primary key)"
+    update_pattern: "live, continuously updated; tickets open, get assigned, and resolve in real time"
+    known_quality_issues:
+      - "4 tickets with no assigned_agent"
+      - "resolved_at is null only for tickets with status Open or In Progress (expected, not a defect)"
+      - "no updated_at column exists, so no reliable way to detect that an existing row changed (e.g. a status update) without a full re-pull"
+    acquisition_method: "bounded query via Postgres; full table pull each run, or bound new records by opened_at, since no updated_at column supports true incremental extraction"
+    validation_checks:
+      - "ticket_id must be unique and not null"
+      - "resolved_at must be null when status is Open or In Progress"
